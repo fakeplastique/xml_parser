@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QComboBox, QTextEdit,
     QFileDialog, QMessageBox, QGroupBox, QGridLayout,
-    QProgressBar, QLineEdit
+    QProgressBar, QLineEdit, QDialog, QListWidget, QListWidgetItem
 )
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont, QCloseEvent
@@ -18,6 +18,63 @@ from src.models.search_models import SearchQuery, SearchResult
 from src.services.xml_transformer import XMLTransformer
 from src.infrastructure import GoogleAuthService, GoogleDriveDocumentStorage
 from src.utils import SearchResultXMLConverter
+
+
+class DriveFileDialog(QDialog):
+    """
+    Dialog for selecting files from Google Drive
+    Responsibility: Display list of files and handle selection
+    """
+
+    def __init__(self, files: list[dict], title: str = "Select File from Google Drive", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumSize(500, 400)
+        self.selected_file = None
+
+        layout = QVBoxLayout(self)
+
+        # Info label
+        info_label = QLabel(f"Found {len(files)} file(s). Select one:")
+        layout.addWidget(info_label)
+
+        # File list
+        self.file_list = QListWidget()
+        self.file_list.itemDoubleClicked.connect(self._on_item_double_clicked)
+
+        for file in files:
+            item = QListWidgetItem(f"{file['name']} ({file.get('mimeType', 'unknown')})")
+            item.setData(Qt.ItemDataRole.UserRole, file)
+            self.file_list.addItem(item)
+
+        layout.addWidget(self.file_list)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+
+        select_button = QPushButton("Select")
+        select_button.clicked.connect(self._on_select)
+
+        cancel_button = QPushButton("Cancel")
+        cancel_button.clicked.connect(self.reject)
+
+        button_layout.addWidget(select_button)
+        button_layout.addWidget(cancel_button)
+        layout.addLayout(button_layout)
+
+    def _on_select(self):
+        """Handle select button click"""
+        current_item = self.file_list.currentItem()
+        if current_item:
+            self.selected_file = current_item.data(Qt.ItemDataRole.UserRole)
+            self.accept()
+        else:
+            QMessageBox.warning(self, "No Selection", "Please select a file.")
+
+    def _on_item_double_clicked(self, item):
+        """Handle double click on item"""
+        self.selected_file = item.data(Qt.ItemDataRole.UserRole)
+        self.accept()
 
 
 class ParserWorker(QThread):
@@ -69,6 +126,33 @@ class GoogleDriveWorker(QThread):
             self.error.emit(str(e))
 
 
+class DriveDownloadWorker(QThread):
+    """
+    Background worker for downloading files from Google Drive
+    Responsibility: Download file and return its content
+    """
+    finished = Signal(dict)  # file_data with 'content', 'name', 'mimeType'
+    error = Signal(str)
+
+    def __init__(self, storage, file_id: str):
+        super().__init__()
+        self.storage = storage
+        self.file_id = file_id
+
+    def run(self):
+        """Execute download operation"""
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            file_data = loop.run_until_complete(
+                self.storage.download_document(self.file_id)
+            )
+            loop.close()
+            self.finished.emit(file_data)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class MainWindow(QMainWindow):
     """
     Main application window
@@ -99,6 +183,7 @@ class MainWindow(QMainWindow):
         self.current_xsl_file: Optional[Path] = None
         self.worker: Optional[ParserWorker] = None
         self.drive_worker: Optional[GoogleDriveWorker] = None
+        self.download_worker: Optional[DriveDownloadWorker] = None
         self.last_search_result: Optional[SearchResult] = None
         self.last_html_content: Optional[str] = None
 
@@ -169,9 +254,14 @@ class MainWindow(QMainWindow):
         xml_button = QPushButton("Browse XML...")
         xml_button.clicked.connect(self._browse_xml_file)
 
+        self.xml_drive_button = QPushButton("Load from Drive")
+        self.xml_drive_button.clicked.connect(self._load_xml_from_drive)
+        self.xml_drive_button.setEnabled(False)
+
         group_layout.addWidget(xml_label, 0, 0)
         group_layout.addWidget(self.xml_file_label, 0, 1)
         group_layout.addWidget(xml_button, 0, 2)
+        group_layout.addWidget(self.xml_drive_button, 0, 3)
 
         # XSL file selection
         xsl_label = QLabel("XSL File:")
@@ -180,9 +270,14 @@ class MainWindow(QMainWindow):
         xsl_button = QPushButton("Browse XSL...")
         xsl_button.clicked.connect(self._browse_xsl_file)
 
+        self.xsl_drive_button = QPushButton("Load from Drive")
+        self.xsl_drive_button.clicked.connect(self._load_xsl_from_drive)
+        self.xsl_drive_button.setEnabled(False)
+
         group_layout.addWidget(xsl_label, 1, 0)
         group_layout.addWidget(self.xsl_file_label, 1, 1)
         group_layout.addWidget(xsl_button, 1, 2)
+        group_layout.addWidget(self.xsl_drive_button, 1, 3)
 
         group.setLayout(group_layout)
         layout.addWidget(group)
@@ -637,6 +732,10 @@ class MainWindow(QMainWindow):
         """Update Google Drive buttons state based on authentication and data availability"""
         is_authenticated = self.auth_service is not None
 
+        # Enable file loading from Drive
+        self.xml_drive_button.setEnabled(is_authenticated)
+        self.xsl_drive_button.setEnabled(is_authenticated)
+
         # Enable XML upload if authenticated and has search results
         self.upload_xml_button.setEnabled(
             is_authenticated and self.last_search_result is not None
@@ -746,6 +845,180 @@ class MainWindow(QMainWindow):
             f"Upload failed: {error_msg}"
         )
 
+    def _load_xml_from_drive(self):
+        """Load XML file from Google Drive"""
+        if not self.drive_storage:
+            return
+
+        try:
+            # Get list of XML files
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            files = loop.run_until_complete(
+                self.drive_storage.list_documents(['xml'])
+            )
+            loop.close()
+
+            if not files:
+                QMessageBox.information(
+                    self,
+                    "No Files",
+                    "No XML files found on Google Drive."
+                )
+                return
+
+            # Show selection dialog
+            dialog = DriveFileDialog(files, "Select XML File from Google Drive", self)
+            if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_file:
+                selected = dialog.selected_file
+
+                # Download file in background using specialized worker
+                self.download_worker = DriveDownloadWorker(
+                    self.drive_storage,
+                    selected['id']
+                )
+                self.download_worker.finished.connect(self._on_xml_downloaded)
+                self.download_worker.error.connect(self._on_download_error)
+
+                self.progress_bar.setVisible(True)
+                self.progress_bar.setRange(0, 0)
+                self.results_text.append(f"\nDownloading {selected['name']} from Google Drive...")
+
+                self.download_worker.start()
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Load Error",
+                f"Failed to load XML files list: {str(e)}"
+            )
+
+    def _load_xsl_from_drive(self):
+        """Load XSL file from Google Drive"""
+        if not self.drive_storage:
+            return
+
+        try:
+            # Get list of XSL files
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            files = loop.run_until_complete(
+                self.drive_storage.list_documents(['xsl'])
+            )
+            loop.close()
+
+            if not files:
+                QMessageBox.information(
+                    self,
+                    "No Files",
+                    "No XSL files found on Google Drive."
+                )
+                return
+
+            # Show selection dialog
+            dialog = DriveFileDialog(files, "Select XSL File from Google Drive", self)
+            if dialog.exec() == QDialog.DialogCode.Accepted and dialog.selected_file:
+                selected = dialog.selected_file
+
+                # Download file in background using specialized worker
+                self.download_worker = DriveDownloadWorker(
+                    self.drive_storage,
+                    selected['id']
+                )
+                self.download_worker.finished.connect(self._on_xsl_downloaded)
+                self.download_worker.error.connect(self._on_download_error)
+
+                self.progress_bar.setVisible(True)
+                self.progress_bar.setRange(0, 0)
+                self.results_text.append(f"\nDownloading {selected['name']} from Google Drive...")
+
+                self.download_worker.start()
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Load Error",
+                f"Failed to load XSL files list: {str(e)}"
+            )
+
+    def _on_xml_downloaded(self, file_data: dict):
+        """Handle XML file download completion"""
+        self.progress_bar.setVisible(False)
+
+        try:
+            # Save to temporary file
+            import tempfile
+            temp_dir = Path(tempfile.gettempdir())
+            temp_file = temp_dir / file_data['name']
+
+            temp_file.write_text(file_data['content'], encoding='utf-8')
+
+            # Update UI
+            self.current_xml_file = temp_file
+            self.xml_file_label.setText(f"{file_data['name']} (from Drive)")
+            self.xml_file_label.setStyleSheet("color: blue;")
+            self.load_data_button.setEnabled(True)
+            self.search_button.setEnabled(True)
+            self._update_transform_button()
+
+            self.results_text.append(f"Downloaded {file_data['name']} successfully!")
+
+            QMessageBox.information(
+                self,
+                "Success",
+                f"XML file loaded from Google Drive:\n{file_data['name']}"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Download Error",
+                f"Failed to process downloaded file: {str(e)}"
+            )
+
+    def _on_xsl_downloaded(self, file_data: dict):
+        """Handle XSL file download completion"""
+        self.progress_bar.setVisible(False)
+
+        try:
+            # Save to temporary file
+            import tempfile
+            temp_dir = Path(tempfile.gettempdir())
+            temp_file = temp_dir / file_data['name']
+
+            temp_file.write_text(file_data['content'], encoding='utf-8')
+
+            # Update UI
+            self.current_xsl_file = temp_file
+            self.xsl_file_label.setText(f"{file_data['name']} (from Drive)")
+            self.xsl_file_label.setStyleSheet("color: blue;")
+            self._update_transform_button()
+
+            self.results_text.append(f"Downloaded {file_data['name']} successfully!")
+
+            QMessageBox.information(
+                self,
+                "Success",
+                f"XSL file loaded from Google Drive:\n{file_data['name']}"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Download Error",
+                f"Failed to process downloaded file: {str(e)}"
+            )
+
+    def _on_download_error(self, error_msg: str):
+        """Handle file download error"""
+        self.progress_bar.setVisible(False)
+
+        QMessageBox.critical(
+            self,
+            "Download Error",
+            f"Failed to download file: {error_msg}"
+        )
+
     def closeEvent(self, event: QCloseEvent):
         """Handle window close event with confirmation"""
         reply = QMessageBox.question(
@@ -764,6 +1037,9 @@ class MainWindow(QMainWindow):
             if self.drive_worker and self.drive_worker.isRunning():
                 self.drive_worker.terminate()
                 self.drive_worker.wait()
+            if self.download_worker and self.download_worker.isRunning():
+                self.download_worker.terminate()
+                self.download_worker.wait()
             event.accept()
         else:
             event.ignore()
