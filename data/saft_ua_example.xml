@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AuditFile xmlns="http://www.saf-t.ua/schema/1.0">
+    <Header>
+        <AuditFileVersion>1.0</AuditFileVersion>
+        <AuditFileCountry>UA</AuditFileCountry>
+        <AuditFileDateCreated>2024-01-15</AuditFileDateCreated>
+        <CompanyID>12345678</CompanyID>
+        <TaxRegistrationNumber>1234567890</TaxRegistrationNumber>
+        <TaxAccountingBasis>Invoice</TaxAccountingBasis>
+        <CompanyName>ТОВ "Приклад Компанія"</CompanyName>
+        <CompanyAddress>
+            <City>Київ</City>
+            <PostalCode>01001</PostalCode>
+            <Region>Київська область</Region>
+            <Country>UA</Country>
+        </CompanyAddress>
+    </Header>
+
+        <MasterFiles>
+        <GeneralLedgerAccounts>
+            <Account id="1" type="asset">
+                <AccountID>1010</AccountID>
+                <AccountDescription>Основні засоби</AccountDescription>
+                <StandardAccountID>10</StandardAccountID>
+                <OpeningDebitBalance>500000.00</OpeningDebitBalance>
+            </Account>
+            <Account id="2" type="asset" currency="UAH" active="true">
+                <AccountID>3010</AccountID>
+                <AccountDescription>Товари на складі</AccountDescription>
+                <StandardAccountID>30</StandardAccountID>
+                <OpeningDebitBalance>250000.00</OpeningDebitBalance>
+            </Account>
+            <Account id="3" type="liability">
+                <AccountID>6310</AccountID>
+                <AccountDescription>Розрахунки з постачальниками</AccountDescription>
+                <StandardAccountID>63</StandardAccountID>
+                <OpeningCreditBalance>150000.00</OpeningCreditBalance>
+            </Account>
+        </GeneralLedgerAccounts>
+
+        <Customers>
+            <Customer id="C001" type="legal" status="active" region="central">
+                <CustomerID>C001</CustomerID>
+                <CustomerTaxID>9876543210</CustomerTaxID>
+                <CompanyName>ТОВ "Клієнт Один"</CompanyName>
+                <Contact>
+                    <ContactPerson>Іванов Іван</ContactPerson>
+                    <Telephone>+380441234567</Telephone>
+                    <Email>ivanov@client1.ua</Email>
+                </Contact>
+                <BillingAddress>
+                    <City>Київ</City>
+                    <PostalCode>02002</PostalCode>
+                    <StreetName>вул. Хрещатик</StreetName>
+                    <BuildingNumber>1</BuildingNumber>
+                </BillingAddress>
+            </Customer>
+            <Customer id="C002" type="individual">
+                <CustomerID>C002</CustomerID>
+                <CompanyName>ФОП Петренко Петро</CompanyName>
+                <Contact>
+                    <ContactPerson>Петренко Петро</ContactPerson>
+                    <Telephone>+380501234567</Telephone>
+                </Contact>
+                <BillingAddress>
+                    <City>Львів</City>
+                    <PostalCode>79000</PostalCode>
+                </BillingAddress>
+            </Customer>
+            <Customer id="C003" type="legal" status="active">
+                <CustomerID>C003</CustomerID>
+                <CustomerTaxID>1122334455</CustomerTaxID>
+                <CompanyName>ПАТ "Великий Клієнт"</CompanyName>
+                <Contact>
+                    <ContactPerson>Сидоренко Сидір</ContactPerson>
+                    <Telephone>+380671234567</Telephone>
+                    <Email>sidorenko@bigclient.ua</Email>
+                </Contact>
+                <BillingAddress>
+                    <City>Одеса</City>
+                    <PostalCode>65000</PostalCode>
+                    <StreetName>вул. Дерибасівська</StreetName>
+                    <BuildingNumber>10</BuildingNumber>
+                </BillingAddress>
+            </Customer>
+        </Customers>
+
+        <Suppliers>
+            <Supplier id="S001" type="legal" verified="true">
+                <SupplierID>S001</SupplierID>
+                <SupplierTaxID>5544332211</SupplierTaxID>
+                <CompanyName>ТОВ "Постачальник А"</CompanyName>
+                <Contact>
+                    <ContactPerson>Коваленко Микола</ContactPerson>
+                    <Telephone>+380442345678</Telephone>
+                </Contact>
+            </Supplier>
+            <Supplier id="S002" type="legal">
+                <SupplierID>S002</SupplierID>
+                <SupplierTaxID>6655443322</SupplierTaxID>
+                <CompanyName>ПрАТ "Постачальник Б"</CompanyName>
+                <Contact>
+                    <ContactPerson>Мельник Олена</ContactPerson>
+                    <Telephone>+380503456789</Telephone>
+                    <Email>melnik@supplierb.ua</Email>
+                </Contact>
+            </Supplier>
+        </Suppliers>
+
+        <Products>
+            <Product id="P001" category="electronics" taxable="true">
+                <ProductCode>PROD-001</ProductCode>
+                <ProductDescription>Ноутбук Dell Latitude</ProductDescription>
+                <ProductGroup>Комп'ютерна техніка</ProductGroup>
+                <UnitPrice>25000.00</UnitPrice>
+                <UnitOfMeasure>шт</UnitOfMeasure>
+            </Product>
+            <Product id="P002" category="office" taxable="true" available="true">
+                <ProductCode>PROD-002</ProductCode>
+                <ProductDescription>Офісний стілець</ProductDescription>
+                <ProductGroup>Меблі</ProductGroup>
+                <UnitPrice>3500.00</UnitPrice>
+                <UnitOfMeasure>шт</UnitOfMeasure>
+            </Product>
+            <Product id="P003" category="electronics">
+                <ProductCode>PROD-003</ProductCode>
+                <ProductDescription>Принтер HP LaserJet</ProductDescription>
+                <ProductGroup>Комп'ютерна техніка</ProductGroup>
+                <UnitPrice>8500.00</UnitPrice>
+                <UnitOfMeasure>шт</UnitOfMeasure>
+            </Product>
+        </Products>
+    </MasterFiles>
+
+    <SourceDocuments>
+        <SalesInvoices>
+            <Invoice id="INV-001" type="standard" paid="false">
+                <InvoiceNo>INV-2024-001</InvoiceNo>
+                <InvoiceDate>2024-01-10</InvoiceDate>
+                <CustomerID>C001</CustomerID>
+                <InvoiceLines>
+                    <Line lineNumber="1">
+                        <ProductCode>PROD-001</ProductCode>
+                        <Quantity>2</Quantity>
+                        <UnitPrice>25000.00</UnitPrice>
+                        <TaxRate>20</TaxRate>
+                        <TaxAmount>10000.00</TaxAmount>
+                        <LineAmount>50000.00</LineAmount>
+                        <TotalAmount>60000.00</TotalAmount>
+                    </Line>
+                    <Line lineNumber="2">
+                        <ProductCode>PROD-002</ProductCode>
+                        <Quantity>5</Quantity>
+                        <UnitPrice>3500.00</UnitPrice>
+                        <TaxRate>20</TaxRate>
+                        <TaxAmount>3500.00</TaxAmount>
+                        <LineAmount>17500.00</LineAmount>
+                        <TotalAmount>21000.00</TotalAmount>
+                    </Line>
+                </InvoiceLines>
+                <DocumentTotals>
+                    <TaxPayable>13500.00</TaxPayable>
+                    <NetTotal>67500.00</NetTotal>
+                    <GrossTotal>81000.00</GrossTotal>
+                </DocumentTotals>
+            </Invoice>
+            <Invoice id="INV-002" type="standard" paid="true" paymentMethod="bank">
+                <InvoiceNo>INV-2024-002</InvoiceNo>
+                <InvoiceDate>2024-01-12</InvoiceDate>
+                <CustomerID>C002</CustomerID>
+                <InvoiceLines>
+                    <Line lineNumber="1">
+                        <ProductCode>PROD-003</ProductCode>
+                        <Quantity>1</Quantity>
+                        <UnitPrice>8500.00</UnitPrice>
+                        <TaxRate>20</TaxRate>
+                        <TaxAmount>1700.00</TaxAmount>
+                        <LineAmount>8500.00</LineAmount>
+                        <TotalAmount>10200.00</TotalAmount>
+                    </Line>
+                </InvoiceLines>
+                <DocumentTotals>
+                    <TaxPayable>1700.00</TaxPayable>
+                    <NetTotal>8500.00</NetTotal>
+                    <GrossTotal>10200.00</GrossTotal>
+                </DocumentTotals>
+            </Invoice>
+            <Invoice id="INV-003" type="credit-note">
+                <InvoiceNo>INV-2024-003</InvoiceNo>
+                <InvoiceDate>2024-01-15</InvoiceDate>
+                <CustomerID>C003</CustomerID>
+                <InvoiceLines>
+                    <Line lineNumber="1">
+                        <ProductCode>PROD-001</ProductCode>
+                        <Quantity>3</Quantity>
+                        <UnitPrice>25000.00</UnitPrice>
+                        <TaxRate>20</TaxRate>
+                        <TaxAmount>15000.00</TaxAmount>
+                        <LineAmount>75000.00</LineAmount>
+                        <TotalAmount>90000.00</TotalAmount>
+                    </Line>
+                </InvoiceLines>
+                <DocumentTotals>
+                    <TaxPayable>15000.00</TaxPayable>
+                    <NetTotal>75000.00</NetTotal>
+                    <GrossTotal>90000.00</GrossTotal>
+                </DocumentTotals>
+            </Invoice>
+        </SalesInvoices>
+    </SourceDocuments>
+</AuditFile>
