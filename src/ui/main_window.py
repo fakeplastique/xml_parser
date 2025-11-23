@@ -1,4 +1,5 @@
 import webbrowser
+import asyncio
 from pathlib import Path
 from typing import Optional, Dict
 
@@ -6,7 +7,7 @@ from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QComboBox, QTextEdit,
     QFileDialog, QMessageBox, QGroupBox, QGridLayout,
-    QProgressBar
+    QProgressBar, QLineEdit
 )
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QFont, QCloseEvent
@@ -15,6 +16,8 @@ from src.parsers.base_parser import IXMLParser
 from src.parsers import SAXParserStrategy, DOMParserStrategy, ElementTreeParserStrategy
 from src.models.search_models import SearchQuery, SearchResult
 from src.services.xml_transformer import XMLTransformer
+from src.infrastructure import GoogleAuthService, GoogleDriveDocumentStorage
+from src.utils import SearchResultXMLConverter
 
 
 class ParserWorker(QThread):
@@ -40,6 +43,32 @@ class ParserWorker(QThread):
             self.error.emit(str(e))
 
 
+class GoogleDriveWorker(QThread):
+    """
+    Background worker for Google Drive operations
+    Responsibility: Execute async Google Drive operations in separate thread
+    """
+    finished = Signal(str)  # file_id
+    error = Signal(str)
+
+    def __init__(self, operation, *args, **kwargs):
+        super().__init__()
+        self.operation = operation
+        self.args = args
+        self.kwargs = kwargs
+
+    def run(self):
+        """Execute async operation"""
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(self.operation(*self.args, **self.kwargs))
+            loop.close()
+            self.finished.emit(result if result else "success")
+        except Exception as e:
+            self.error.emit(str(e))
+
+
 class MainWindow(QMainWindow):
     """
     Main application window
@@ -61,10 +90,17 @@ class MainWindow(QMainWindow):
         # Initialize services
         self.transformer = XMLTransformer()
 
+        # Google Drive services
+        self.auth_service: Optional[GoogleAuthService] = None
+        self.drive_storage: Optional[GoogleDriveDocumentStorage] = None
+
         # State
         self.current_xml_file: Optional[Path] = None
         self.current_xsl_file: Optional[Path] = None
         self.worker: Optional[ParserWorker] = None
+        self.drive_worker: Optional[GoogleDriveWorker] = None
+        self.last_search_result: Optional[SearchResult] = None
+        self.last_html_content: Optional[str] = None
 
         # Setup UI
         self._setup_ui()
@@ -103,6 +139,9 @@ class MainWindow(QMainWindow):
 
         # Transformation section
         self._create_transformation_section(main_layout)
+
+        # Google Drive section
+        self._create_google_drive_section(main_layout)
 
     def _create_header(self, layout: QVBoxLayout):
         """Create header with title"""
@@ -442,6 +481,10 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         self.search_button.setEnabled(True)
 
+        # Save result for Google Drive upload
+        self.last_search_result = result
+        self._update_drive_buttons_state()
+
         # Display results
         self.results_text.append("\n" + "=" * 60)
         self.results_text.append(result.to_detailed_string())
@@ -476,11 +519,15 @@ class MainWindow(QMainWindow):
             output_file = self.current_xml_file.parent / "output.html"
 
             # Transform
-            self.transformer.transform(
+            html_content = self.transformer.transform(
                 self.current_xml_file,
                 self.current_xsl_file,
                 output_file
             )
+
+            # Save HTML content for Google Drive upload
+            self.last_html_content = html_content
+            self._update_drive_buttons_state()
 
             self.results_text.append(f"\n✓ Transformation successful!")
             self.results_text.append(f"Output saved to: {output_file}")
@@ -518,6 +565,187 @@ class MainWindow(QMainWindow):
                 "HTML file not found. Please run transformation first."
             )
 
+    def _create_google_drive_section(self, layout: QVBoxLayout):
+        """Create Google Drive integration controls"""
+        group = QGroupBox("Google Drive Integration")
+        group_layout = QGridLayout()
+
+        # Authentication status
+        auth_label = QLabel("Status:")
+        self.auth_status_label = QLabel("Not authenticated")
+        self.auth_status_label.setStyleSheet("color: gray;")
+
+        group_layout.addWidget(auth_label, 0, 0)
+        group_layout.addWidget(self.auth_status_label, 0, 1)
+
+        # Authenticate button
+        self.auth_button = QPushButton("Authenticate with Google")
+        self.auth_button.clicked.connect(self._authenticate_google)
+
+        group_layout.addWidget(self.auth_button, 0, 2)
+
+        # File name input
+        file_name_label = QLabel("File Name:")
+        self.drive_file_name = QLineEdit()
+        self.drive_file_name.setPlaceholderText("Enter file name...")
+
+        group_layout.addWidget(file_name_label, 1, 0)
+        group_layout.addWidget(self.drive_file_name, 1, 1, 1, 2)
+
+        # Upload buttons
+        self.upload_xml_button = QPushButton("Upload Search Results as XML")
+        self.upload_xml_button.clicked.connect(self._upload_search_results_xml)
+        self.upload_xml_button.setEnabled(False)
+
+        self.upload_html_button = QPushButton("Upload Transformed HTML")
+        self.upload_html_button.clicked.connect(self._upload_html)
+        self.upload_html_button.setEnabled(False)
+
+        group_layout.addWidget(self.upload_xml_button, 2, 0, 1, 3)
+        group_layout.addWidget(self.upload_html_button, 3, 0, 1, 3)
+
+        group.setLayout(group_layout)
+        layout.addWidget(group)
+
+    def _authenticate_google(self):
+        """Handle Google authentication"""
+        try:
+            self.auth_service = GoogleAuthService()
+            self.auth_service.authenticate()
+            self.drive_storage = GoogleDriveDocumentStorage(self.auth_service)
+
+            self.auth_status_label.setText("Authenticated")
+            self.auth_status_label.setStyleSheet("color: green;")
+            self.auth_button.setText("Re-authenticate")
+
+            self._update_drive_buttons_state()
+
+            QMessageBox.information(
+                self,
+                "Success",
+                "Successfully authenticated with Google Drive!"
+            )
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Authentication Error",
+                f"Failed to authenticate: {str(e)}"
+            )
+
+    def _update_drive_buttons_state(self):
+        """Update Google Drive buttons state based on authentication and data availability"""
+        is_authenticated = self.auth_service is not None
+
+        # Enable XML upload if authenticated and has search results
+        self.upload_xml_button.setEnabled(
+            is_authenticated and self.last_search_result is not None
+        )
+
+        # Enable HTML upload if authenticated and has HTML content
+        self.upload_html_button.setEnabled(
+            is_authenticated and self.last_html_content is not None
+        )
+
+    def _upload_search_results_xml(self):
+        """Upload search results as XML to Google Drive"""
+        if not self.drive_storage or not self.last_search_result:
+            return
+
+        file_name = self.drive_file_name.text().strip()
+        if not file_name:
+            file_name = f"search_results_{self.last_search_result.query.element_name}.xml"
+        elif not file_name.endswith('.xml'):
+            file_name += '.xml'
+
+        try:
+            # Convert search results to XML
+            xml_content = SearchResultXMLConverter.convert_to_xml(self.last_search_result)
+
+            # Upload in background
+            self.drive_worker = GoogleDriveWorker(
+                self.drive_storage.upload_document,
+                xml_content,
+                file_name,
+                'xml'
+            )
+            self.drive_worker.finished.connect(self._on_upload_finished)
+            self.drive_worker.error.connect(self._on_upload_error)
+
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setRange(0, 0)
+            self.upload_xml_button.setEnabled(False)
+            self.results_text.append(f"\nUploading {file_name} to Google Drive...")
+
+            self.drive_worker.start()
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Upload Error",
+                f"Failed to prepare upload: {str(e)}"
+            )
+
+    def _upload_html(self):
+        """Upload transformed HTML to Google Drive"""
+        if not self.drive_storage or not self.last_html_content:
+            return
+
+        file_name = self.drive_file_name.text().strip()
+        if not file_name:
+            file_name = "transformed_output.html"
+        elif not file_name.endswith('.html'):
+            file_name += '.html'
+
+        try:
+            # Upload in background
+            self.drive_worker = GoogleDriveWorker(
+                self.drive_storage.upload_document,
+                self.last_html_content,
+                file_name,
+                'html'
+            )
+            self.drive_worker.finished.connect(self._on_upload_finished)
+            self.drive_worker.error.connect(self._on_upload_error)
+
+            self.progress_bar.setVisible(True)
+            self.progress_bar.setRange(0, 0)
+            self.upload_html_button.setEnabled(False)
+            self.results_text.append(f"\nUploading {file_name} to Google Drive...")
+
+            self.drive_worker.start()
+
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Upload Error",
+                f"Failed to prepare upload: {str(e)}"
+            )
+
+    def _on_upload_finished(self, file_id: str):
+        """Handle upload completion"""
+        self.progress_bar.setVisible(False)
+        self._update_drive_buttons_state()
+
+        self.results_text.append(f"Upload successful! File ID: {file_id}")
+
+        QMessageBox.information(
+            self,
+            "Success",
+            f"File uploaded to Google Drive!\nFile ID: {file_id}"
+        )
+
+    def _on_upload_error(self, error_msg: str):
+        """Handle upload error"""
+        self.progress_bar.setVisible(False)
+        self._update_drive_buttons_state()
+
+        QMessageBox.critical(
+            self,
+            "Upload Error",
+            f"Upload failed: {error_msg}"
+        )
+
     def closeEvent(self, event: QCloseEvent):
         """Handle window close event with confirmation"""
         reply = QMessageBox.question(
@@ -529,10 +757,13 @@ class MainWindow(QMainWindow):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
-            # Clean up worker thread if running
+            # Clean up worker threads if running
             if self.worker and self.worker.isRunning():
                 self.worker.terminate()
                 self.worker.wait()
+            if self.drive_worker and self.drive_worker.isRunning():
+                self.drive_worker.terminate()
+                self.drive_worker.wait()
             event.accept()
         else:
             event.ignore()
