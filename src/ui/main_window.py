@@ -48,7 +48,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("SAF-T UA XML Parser - OOP Lab 2")
+        self.setWindowTitle("XML Parser")
         self.setMinimumSize(1000, 700)
 
         # Initialize parsers (Strategy pattern)
@@ -106,7 +106,7 @@ class MainWindow(QMainWindow):
 
     def _create_header(self, layout: QVBoxLayout):
         """Create header with title"""
-        title = QLabel("SAF-T UA XML Parser & Transformer")
+        title = QLabel("XML Parser & Transformer")
         title_font = QFont()
         title_font.setPointSize(16)
         title_font.setBold(True)
@@ -114,7 +114,7 @@ class MainWindow(QMainWindow):
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(title)
 
-        subtitle = QLabel("Lab 2: Strategy Pattern | SAX, DOM, ElementTree Parsers")
+        subtitle = QLabel("SAX, DOM, ElementTree Parsers")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(subtitle)
 
