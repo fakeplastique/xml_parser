@@ -162,7 +162,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("XML Parser")
-        self.setMinimumSize(1000, 700)
+        self.setMinimumSize(1600, 1200)
 
         # Initialize parsers (Strategy pattern)
         self.parsers: Dict[str, IXMLParser] = {
@@ -705,7 +705,10 @@ class MainWindow(QMainWindow):
     def _authenticate_google(self):
         """Handle Google authentication"""
         try:
-            self.auth_service = GoogleAuthService()
+            if self.auth_service:
+                self.auth_service.logout()
+            else:
+                self.auth_service = GoogleAuthService()
             self.auth_service.authenticate()
             self.drive_storage = GoogleDriveDocumentStorage(self.auth_service)
 
@@ -1037,9 +1040,6 @@ class MainWindow(QMainWindow):
             if self.drive_worker and self.drive_worker.isRunning():
                 self.drive_worker.terminate()
                 self.drive_worker.wait()
-            if self.download_worker and self.download_worker.isRunning():
-                self.download_worker.terminate()
-                self.download_worker.wait()
             event.accept()
         else:
             event.ignore()

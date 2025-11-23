@@ -19,7 +19,7 @@ class GoogleAuthService:
     """
 
     SCOPES = [
-        'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/drive',  # Повний доступ до Drive (читання всіх файлів)
         'https://www.googleapis.com/auth/spreadsheets'
     ]
 

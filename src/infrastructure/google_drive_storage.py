@@ -66,37 +66,42 @@ class GoogleDriveDocumentStorage:
         if file_types is None:
             file_types = ['xml', 'html', 'xsl']
 
-        # Створення запиту для фільтрації по MIME типам
-        mime_types = []
-        for ft in file_types:
-            if ft.lower() == 'xml':
-                mime_types.append("mimeType='application/xml'")
-                mime_types.append("mimeType='text/xml'")
-            elif ft.lower() == 'html':
-                mime_types.append("mimeType='text/html'")
-            elif ft.lower() == 'xsl':
-                mime_types.append("mimeType='application/xslt+xml'")
-                mime_types.append("mimeType='text/xsl'")
-
-        query = ' or '.join(mime_types) if mime_types else None
-
         try:
             drive_service = self._get_drive_service()
 
+            # Завантажуємо всі файли (не в корзині)
             response = await loop.run_in_executor(
                 None,
                 lambda: drive_service.files().list(
-                    q=query,
+                    q="trashed=false",
                     spaces='drive',
                     fields='files(id, name, mimeType, modifiedTime)',
-                    orderBy='modifiedTime desc'
+                    orderBy='modifiedTime desc',
+                    pageSize=1000  # Збільшуємо ліміт
                 ).execute()
             )
 
-            files = response.get('files', [])
-            logger.info(f"Знайдено {len(files)} документів")
+            all_files = response.get('files', [])
 
-            return files
+            # Фільтруємо файли по розширенню на клієнті
+            filtered_files = []
+            for file in all_files:
+                file_name = file.get('name', '').lower()
+
+                for ft in file_types:
+                    if ft.lower() == 'xml' and file_name.endswith('.xml'):
+                        filtered_files.append(file)
+                        break
+                    elif ft.lower() == 'html' and (file_name.endswith('.html') or file_name.endswith('.htm')):
+                        filtered_files.append(file)
+                        break
+                    elif ft.lower() == 'xsl' and (file_name.endswith('.xsl') or file_name.endswith('.xslt')):
+                        filtered_files.append(file)
+                        break
+
+            logger.info(f"Знайдено {len(filtered_files)} документів ({len(all_files)} всього)")
+
+            return filtered_files
 
         except HttpError as error:
             logger.error(f"Помилка при отриманні списку документів: {error}")
